@@ -69,6 +69,15 @@ def init_db(retries: int = 10, delay: float = 1.0) -> None:
     conn.close()
 
 
+def ping() -> bool:
+    """Run SELECT 1 against Postgres to check it's actually reachable —
+    a real health check, not just "is the process alive"."""
+    conn = get_connection()
+    conn.execute("SELECT 1")
+    conn.close()
+    return True
+
+
 def list_tasks():
     conn = get_connection()
     rows = conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()

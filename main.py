@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import db
@@ -21,7 +22,15 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    """Not just "is the process alive" — actually pings Postgres with
+    SELECT 1. A load balancer polling this can pull an instance out of
+    rotation the moment its database connection goes bad, instead of
+    routing traffic to a server that can't serve real requests."""
+    try:
+        db.ping()
+        return {"status": "ok", "db": "ok"}
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "degraded", "db": "error"})
 
 @app.get("/tasks", summary="List all tasks")
 def get_tasks():
