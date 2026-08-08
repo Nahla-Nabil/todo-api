@@ -54,6 +54,11 @@ def init_db(retries: int = 10, delay: float = 1.0) -> None:
         )
         """
     )
+    # Index on `done` since that's the column GET /tasks would filter on
+    # if that feature ever gets added — see the README for why this alone
+    # doesn't help until Postgres also runs ANALYZE.
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks (done)")
+
     row_count = conn.execute("SELECT COUNT(*) AS count FROM tasks").fetchone()["count"]
     if row_count == 0:
         with conn.cursor() as cur:
