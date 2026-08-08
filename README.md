@@ -93,6 +93,24 @@ Interactive docs are available at `http://localhost:8000/docs`.
 
 ![Swagger UI screenshot](screenshots/swagger-screenshot.png)
 
+## Extras
+
+A few optional stretch goals from the assignment, done after the core 6 stages:
+
+**A real health check.** `GET /health` doesn't just report "the process is alive" — it runs `SELECT 1` against Postgres via `db.ping()`. If that fails, it returns `503` with `{"status": "degraded", "db": "error"}` instead of a plain `200`. This matters because a load balancer polling `/health` can pull an instance out of rotation the moment its database connection goes bad, instead of continuing to route real traffic to a server that can't actually serve it.
+
+**An index on `tasks.done`, and a genuinely surprising `EXPLAIN ANALYZE`.** Bulk-seeded the table with 200,000 extra rows to make a difference measurable, then compared `EXPLAIN ANALYZE SELECT * FROM tasks WHERE done = true`:
+
+| Step | Plan | Execution time |
+|---|---|---|
+| Before the index | Seq Scan | 8.78 ms |
+| After `CREATE INDEX`, before `ANALYZE` | **Still Seq Scan** | 8.72 ms |
+| After running `ANALYZE tasks` | Bitmap Index Scan | **4.48 ms** |
+
+Creating the index alone didn't change anything — Postgres's query planner was still working off stale statistics from before the index existed, so it kept picking a sequential scan. Only after `ANALYZE` refreshed those statistics did the planner realize the index was worth using, roughly halving execution time. The index (`idx_tasks_done`) is now created automatically in `db.init_db()`; the 200k test rows were deleted afterward — the seeded table still only has the original 3 tasks.
+
+**A multi-stage Dockerfile.** Split the build into a `builder` stage that installs dependencies into `/install`, and a final stage that only copies that installed prefix plus the two source files — no pip cache, build metadata, or intermediate layers carried into the final image. Went from **240MB → 227MB**. The reduction is modest here since the original Dockerfile already used `--no-cache-dir` and never needed extra build tools (`psycopg[binary]` ships prebuilt wheels) — the main win of multi-stage builds shows up more when a project actually needs a compiler toolchain to build dependencies.
+
 ## AI vs me — Assignment 1 (in-memory API)
 
 **Prompt used:**
