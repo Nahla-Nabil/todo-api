@@ -48,8 +48,8 @@ def init_db():
 
 init_db()
 
-# Still used by Stages 0 (in-memory list stays wired to the endpoints for
-# now; Stages 1-3 will move each endpoint over to tasks.db one at a time).
+# Still used by Stages 2-3 (in-memory list stays wired to the write
+# endpoints for now; Stages 2-3 will move each of them over to tasks.db).
 tasks = [
     {"id": 1, "title": "Buy milk", "done": False},
     {"id": 2, "title": "Walk the dog", "done": False},
@@ -63,6 +63,13 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     done: bool | None = None
 
+
+def row_to_task(row: sqlite3.Row) -> dict:
+    """Turn a sqlite3.Row into the same plain dict shape the API has
+    always returned, so the response body never changes."""
+    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+
+
 @app.get("/")
 def root():
     return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
@@ -73,14 +80,19 @@ def health():
 
 @app.get("/tasks", summary="List all tasks")
 def get_tasks():
-    return tasks
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM tasks").fetchall()
+    conn.close()
+    return [row_to_task(row) for row in rows]
 
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int):
-    for t in tasks:
-        if t["id"] == task_id:
-            return t
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return row_to_task(row)
 
 @app.post("/tasks", status_code=201)
 def create_task(task: TaskCreate):
