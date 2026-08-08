@@ -2,10 +2,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import cache
 import db
 
 app = FastAPI()
 db.init_db()
+cache.ping_with_retry()
 
 
 class TaskCreate(BaseModel):
@@ -23,14 +25,24 @@ def root():
 @app.get("/health")
 def health():
     """Not just "is the process alive" — actually pings Postgres with
-    SELECT 1. A load balancer polling this can pull an instance out of
-    rotation the moment its database connection goes bad, instead of
-    routing traffic to a server that can't serve real requests."""
+    SELECT 1, and Redis with PING. A load balancer polling this can pull
+    an instance out of rotation the moment a dependency goes bad, instead
+    of routing traffic to a server that can't serve real requests."""
+    db_status = "ok"
     try:
         db.ping()
-        return {"status": "ok", "db": "ok"}
     except Exception:
-        return JSONResponse(status_code=503, content={"status": "degraded", "db": "error"})
+        db_status = "error"
+
+    redis_status = "ok"
+    try:
+        cache.ping()
+    except Exception:
+        redis_status = "error"
+
+    healthy = db_status == "ok" and redis_status == "ok"
+    body = {"status": "ok" if healthy else "degraded", "db": db_status, "redis": redis_status}
+    return body if healthy else JSONResponse(status_code=503, content=body)
 
 @app.get("/tasks", summary="List all tasks")
 def get_tasks():

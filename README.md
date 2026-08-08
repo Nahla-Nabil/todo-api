@@ -36,7 +36,7 @@ docker exec -it <db-container-name> psql -U postgres -d tasks -c "SELECT * FROM 
 ```bash
    cp .env.example .env
 ```
-3. Start everything — the API and its Postgres database:
+3. Start everything — the API, Postgres, and Redis:
 ```bash
    docker compose up --build
 ```
@@ -97,7 +97,12 @@ Interactive docs are available at `http://localhost:8000/docs`.
 
 A few optional stretch goals from the assignment, done after the core 6 stages:
 
-**A real health check.** `GET /health` doesn't just report "the process is alive" — it runs `SELECT 1` against Postgres via `db.ping()`. If that fails, it returns `503` with `{"status": "degraded", "db": "error"}` instead of a plain `200`. This matters because a load balancer polling `/health` can pull an instance out of rotation the moment its database connection goes bad, instead of continuing to route real traffic to a server that can't actually serve it.
+**A real health check.** `GET /health` doesn't just report "the process is alive" — it runs `SELECT 1` against Postgres via `db.ping()` and `PING` against Redis via `cache.ping()`. If either fails, it returns `503` with `{"status": "degraded", ...}` instead of a plain `200`. This matters because a load balancer polling `/health` can pull an instance out of rotation the moment a dependency goes bad, instead of continuing to route real traffic to a server that can't actually serve it.
+
+**Redis, added to the stack.** A third service (`redis:7-alpine`) now runs alongside the app and Postgres in `compose.yaml`, not doing anything yet — it's not used by any endpoint — but wired up and pinged on startup (`cache.ping_with_retry()` in `main.py`, same retry-until-ready reasoning as `db.init_db()`) so week 4's caching work has a warm connection to build on instead of starting from zero. `GET /health` reports `redis: "ok"` alongside `db: "ok"` once it's confirmed reachable.
+```json
+{"status": "ok", "db": "ok", "redis": "ok"}
+```
 
 **An index on `tasks.done`, and a genuinely surprising `EXPLAIN ANALYZE`.** Bulk-seeded the table with 200,000 extra rows to make a difference measurable, then compared `EXPLAIN ANALYZE SELECT * FROM tasks WHERE done = true`:
 
