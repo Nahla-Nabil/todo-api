@@ -20,7 +20,8 @@ docker exec -it <db-container-name> psql -U postgres -d tasks -c "\dt"
 docker exec -it <db-container-name> psql -U postgres -d tasks -c "SELECT * FROM tasks;"
 ```
 
-<!-- TODO: replace with a screenshot of the psql output above (or a GUI like pgAdmin/DBeaver/TablePlus showing the tasks table) -->
+![psql — tasks table](screenshots/postgres-tasks.png)
+<!-- TODO: replace the line above with an actual screenshot of the psql output above, saved as screenshots/postgres-tasks.png (or a GUI like pgAdmin/DBeaver/TablePlus showing the tasks table) -->
 
 ## How to run
 
@@ -90,7 +91,7 @@ Response:
 
 Interactive docs are available at `http://localhost:8000/docs`.
 
-![Swagger UI screenshot](swagger-screenshot.png)
+![Swagger UI screenshot](screenshots/swagger-screenshot.png)
 
 ## AI vs me — Assignment 1 (in-memory API)
 
