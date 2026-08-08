@@ -1,49 +1,63 @@
 # Task API
 
-A small CRUD API for managing a to-do list, built with FastAPI. Data is stored in a **SQLite** database (`tasks.db`), so it survives server restarts.
+A small CRUD API for managing a to-do list, built with FastAPI. Data is stored in a containerized **PostgreSQL** database, started together with the app by a single `docker compose up`.
 
 ## Database
 
-- **Why SQLite:** it's a single-file, serverless database — no separate service to install or run, which is exactly what a small project like this needs. The whole database is one file (`tasks.db`), and it's still the same relational SQL model you'd use with Postgres or MySQL later, so nothing here is thrown away when a project outgrows SQLite.
-- **Where the file lives:** `tasks.db`, created automatically in the project root the first time the app starts. It's listed in `.gitignore`, so every fresh clone starts with an empty file that gets seeded on first run — not shared through Git.
-- **How it's created:** on startup, `init_db()` (in `main.py`) runs `CREATE TABLE IF NOT EXISTS tasks (...)`, then checks `SELECT COUNT(*) FROM tasks` and inserts three example tasks only if the table is empty. Restarting the app never duplicates the seed data.
-- **How queries are run:** every endpoint opens a connection with `sqlite3.connect("tasks.db")` and uses **parameterized queries** (`?` placeholders, values passed separately) for every `SELECT`/`INSERT`/`UPDATE`/`DELETE` — never string-formatted SQL — so user input can't break or inject into a query.
+- **Why Postgres in Docker:** the API has now been swapped onto three different storage engines — in-memory (A1), a SQLite file (A2), and now a real Postgres server (A3) — and the routes never changed. That's the point: storage is just an implementation detail behind one small module. Postgres is the same relational engine behind most real production backends, and Docker means no local Postgres install, no version fights — `docker run`/`docker compose up` and a real database server appears on `localhost`.
+- **The repository module:** every single line of SQL in this project lives in [`db.py`](db.py) — `main.py`'s routes only ever call `db.list_tasks()`, `db.get_task()`, `db.create_task()`, `db.update_task()`, `db.delete_task()`. Swapping storage again in the future would only touch this one file.
+- **Connection & secrets:** the app reads a `DATABASE_URL` connection string from a `.env` file (git-ignored — never committed) via `python-dotenv`. A `.env.example` with placeholder values is committed instead, so anyone cloning the repo knows exactly which variable to set. No password is ever hardcoded in the app code.
+- **Schema & seeding:** on startup, `db.init_db()` runs `CREATE TABLE IF NOT EXISTS tasks (id SERIAL PRIMARY KEY, title TEXT NOT NULL, done BOOLEAN NOT NULL DEFAULT FALSE)`, then seeds the same three example tasks as before — but only if the table is empty, so restarting the app (or the container) never duplicates them. Because `docker compose`'s `depends_on` only waits for the database *container* to start, not for Postgres to finish accepting connections, `init_db()` also retries the first connection a few times before giving up — otherwise the API container could crash on the very first `docker compose up`.
+- **Queries:** every query uses **parameterized placeholders** (`%s`, values passed separately via `psycopg`) for every `SELECT`/`INSERT`/`UPDATE`/`DELETE` — never string-formatted SQL.
+- **Persistence:** Postgres's data directory is mounted to a named Docker **volume** (`taskdata`), so tasks survive a full `docker compose down` + `docker compose up` — verified by creating a task, tearing the whole stack down, bringing it back up, and confirming the task was still there.
 
-### Explored with DB Browser for SQLite
+### Explored with psql
 
-Opened `tasks.db` in [DB Browser for SQLite](https://sqlitebrowser.org/) and ran queries by hand in the **Execute SQL** tab, for example:
+Opened a SQL prompt directly inside the database container and ran a query by hand:
 
 ```sql
-UPDATE tasks SET done = 1 WHERE id = 1;
+docker exec -it <db-container-name> psql -U postgres -d tasks -c "\dt"
+docker exec -it <db-container-name> psql -U postgres -d tasks -c "SELECT * FROM tasks;"
 ```
 
-This marked "Buy milk" as done directly in the database — no code involved. Calling `GET /tasks` on the running API immediately showed `"done": true` for that task, confirming the API and DB Browser read and write the exact same file.
-
-![DB Browser — Execute SQL](db-browser-screenshot.png)
-![DB Browser — Browse Data](db-browser-browse-data.png)
+<!-- TODO: replace with a screenshot of the psql output above (or a GUI like pgAdmin/DBeaver/TablePlus showing the tasks table) -->
 
 ## How to run
+
+**The one-command way (recommended):**
 
 1. Clone this repo and enter the folder:
 ```bash
    git clone https://github.com/Nahla-Nabil/todo-api.git
    cd todo-api
 ```
-2. Create and activate a virtual environment:
+2. Copy the example env file (only needed if you plan to also run the app outside of Docker — `compose.yaml` sets its own `DATABASE_URL` for the containerized run):
+```bash
+   cp .env.example .env
+```
+3. Start everything — the API and its Postgres database:
+```bash
+   docker compose up --build
+```
+4. Open `http://localhost:8000` in your browser. The `tasks` table and three example tasks are created automatically on first run.
+
+**Running locally against a standalone Postgres container** (useful while developing without rebuilding the image each time):
+
+1. Start Postgres by itself, with a volume so data persists:
+```bash
+   docker run --name taskdb -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=tasks -p 5433:5432 -v taskdata:/var/lib/postgresql/data -d postgres:16
+```
+   (Host port `5433` is used instead of the default `5432` here because a native Postgres install can already be sitting on `5432` on some machines — adjust to `5432` if that's free on yours, and update `.env`/`.env.example` to match.)
+2. Create a virtual environment and install dependencies:
 ```bash
    python3 -m venv venv
    venv\Scripts\Activate.ps1   # Windows PowerShell
+   pip install -r requirements.txt
 ```
-3. Install dependencies (SQLite support comes from Python's built-in `sqlite3` module — nothing extra to install for the database itself):
-```bash
-   pip install fastapi uvicorn
-```
-4. Start the server:
+3. Make sure `.env` has `DATABASE_URL=postgresql://postgres:dev@localhost:5433/tasks`, then start the server:
 ```bash
    uvicorn main:app --reload --port 8000
 ```
-   `tasks.db` is created automatically on first run, with the `tasks` table and three example tasks seeded.
-5. Open `http://localhost:8000` in your browser.
 
 ## Endpoints
 
