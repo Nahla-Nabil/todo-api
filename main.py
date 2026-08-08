@@ -48,8 +48,8 @@ def init_db():
 
 init_db()
 
-# Still used by Stages 2-3 (in-memory list stays wired to the write
-# endpoints for now; Stages 2-3 will move each of them over to tasks.db).
+# Still used by Stage 3 (in-memory list stays wired to PUT/DELETE for now;
+# Stage 3 will move them over to tasks.db too).
 tasks = [
     {"id": 1, "title": "Buy milk", "done": False},
     {"id": 2, "title": "Walk the dog", "done": False},
@@ -98,10 +98,17 @@ def get_task(task_id: int):
 def create_task(task: TaskCreate):
     if not task.title.strip():
         raise HTTPException(status_code=400, detail="title is required")
-    new_id = max((t["id"] for t in tasks), default=0) + 1
-    new_task = {"id": new_id, "title": task.title, "done": False}
-    tasks.append(new_task)
-    return new_task
+    conn = get_connection()
+    cursor = conn.execute(
+        "INSERT INTO tasks (title, done) VALUES (?, ?)", (task.title, 0)
+    )
+    conn.commit()
+    # cursor.lastrowid is the id SQLite just assigned this row.
+    new_row = conn.execute(
+        "SELECT * FROM tasks WHERE id = ?", (cursor.lastrowid,)
+    ).fetchone()
+    conn.close()
+    return row_to_task(new_row)
 
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int, update: TaskUpdate):
