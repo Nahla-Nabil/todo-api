@@ -132,3 +132,27 @@ I never said whether `done` should be stored as `BOOLEAN` or `INTEGER` in the `C
 
 **One rematch:**
 I added one sentence to the prompt — *"reject titles that are empty or contain only whitespace on both POST and PUT, not just missing"* — regenerated the `create_task` validation, and it now correctly returns `400` for a whitespace-only title (shown above), matching `PUT`'s behavior.
+
+## AI vs me — Assignment 3 (Postgres/Docker migration)
+
+**Prompt used:**
+> Containerize main.py — the hand-written Python/FastAPI version — onto Postgres, using psycopg. Everything lives in a new ai-version/ folder. Don't touch the root main.py or db.py. Startup connects to Postgres using a DATABASE_URL from .env — password never hardcoded. Create the tasks table if it's not there yet: id serial primary key, title text, done boolean. Seed the same three tasks as before ("Buy milk" and "Walk the dog" not done, "Learn FastAPI" done), but only when the table's empty — restarting the app shouldn't add them again. Endpoints need to behave exactly like they do now: GET /tasks, GET /tasks/{id} (404 if missing), POST /tasks (201, or 400 for missing/empty title), PUT /tasks/{id} (200, partial updates fine, 404 if the id's not there), DELETE /tasks/{id} (204, or 404 if missing). Queries stay parameterized with %s placeholders — no pasting values into SQL strings. Write a Dockerfile and docker-compose.yml that bring up the app and Postgres together with a named volume, so data survives a restart.
+
+**What the AI did better:**
+Same trick as Assignment 2's AI: `PUT` uses a single `UPDATE ... SET title = COALESCE(%s, title), done = COALESCE(%s, done) ... RETURNING *`, and `DELETE` reads `cursor.rowcount` instead of doing a `SELECT` first — one round trip instead of two, for both. It also added `response_model=Task` on every route for nicer `/docs` output, which I didn't ask for.
+
+**What it got wrong or ignored:**
+1. **The exact same whitespace-title bug as Assignment 2, again.** `POST /tasks` only validates with `Field(..., min_length=1)`, no `.strip()` — so `{"title": "   "}` returns `201 Created` instead of `400`. `PUT` gets a correct manual `.strip()` check, so the same inconsistency between the two endpoints repeated itself almost exactly, in a brand-new file, on a completely different prompt.
+```
+$ curl -X POST /tasks -d '{"title": "   "}'
+→ 201 Created  {"id": 4, "title": "   ", "done": false}
+```
+2. **`docker-compose.yml` used an obsolete `version: "3.9"` key** — Compose printed a deprecation warning on every `up`/`down`. My own `compose.yaml` doesn't have this line at all.
+3. **No connection-retry logic at startup.** My `db.init_db()` retries the first Postgres connection a few times, because `depends_on` only waits for the *container* to start, not for Postgres itself to finish accepting connections. The AI's `init_db()` makes one bare connection attempt — it happened to work here because the Postgres image was already cached and started fast, but that's luck, not a guarantee; a slower first pull could crash it on the very first `docker compose up`.
+4. **Defaulted to host port 8000 with no awareness of my machine.** My own stack was already running on 8000, so `docker compose up` failed outright the first time (`port is already allocated`) until I stopped my own stack to test the AI's. Not really the AI's fault — it can't know what's already running locally — but it's a reminder that "works first try" depends on context an AI never has.
+
+**What my prompt forgot to specify — and what the AI silently decided:**
+I never said what the Postgres username/password should default to, so the AI picked `postgres`/`postgres` — different from my own `dev` default, so the two `.env.example` files don't actually match each other even though they solve the same problem. I also never mentioned `GET /` or `/health` (only the 5 CRUD routes), so — exactly like Assignment 1 — the AI built only what I explicitly listed and nothing more. And I never said whether the DB code should live in its own module: the AI put everything straight into `main.py`, while I split mine into `db.py` — my prompt never actually asked for a "repository module" the way the real assignment brief did.
+
+**One rematch:**
+I'd add: *"reject titles that are empty or whitespace-only on both POST and PUT, not just missing — and retry the first database connection a few times at startup, since the app container may start before Postgres is ready to accept connections."*
