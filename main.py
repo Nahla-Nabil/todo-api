@@ -1,8 +1,55 @@
+import sqlite3
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 app = FastAPI()
 
+DB_FILE = "tasks.db"
+
+
+def get_connection():
+    """Open a new connection to tasks.db.
+
+    row_factory = sqlite3.Row lets us read columns by name (row["title"])
+    instead of by position (row[1]), which is much less error-prone.
+    """
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    """Create the tasks table if it doesn't exist yet, and seed three
+    example tasks only the first time the app ever runs (table empty)."""
+    conn = get_connection()
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            done BOOLEAN NOT NULL DEFAULT 0
+        )
+        """
+    )
+    row_count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+    if row_count == 0:
+        conn.executemany(
+            "INSERT INTO tasks (title, done) VALUES (?, ?)",
+            [
+                ("Buy milk", 0),
+                ("Walk the dog", 0),
+                ("Learn FastAPI", 1),
+            ],
+        )
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+# Still used by Stages 0 (in-memory list stays wired to the endpoints for
+# now; Stages 1-3 will move each endpoint over to tasks.db one at a time).
 tasks = [
     {"id": 1, "title": "Buy milk", "done": False},
     {"id": 2, "title": "Walk the dog", "done": False},
