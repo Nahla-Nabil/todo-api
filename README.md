@@ -1,6 +1,26 @@
 # Task API
 
-A small CRUD API for managing a to-do list, built with FastAPI. Data is stored in memory (no database yet).
+A small CRUD API for managing a to-do list, built with FastAPI. Data is stored in a **SQLite** database (`tasks.db`), so it survives server restarts.
+
+## Database
+
+- **Why SQLite:** it's a single-file, serverless database — no separate service to install or run, which is exactly what a small project like this needs. The whole database is one file (`tasks.db`), and it's still the same relational SQL model you'd use with Postgres or MySQL later, so nothing here is thrown away when a project outgrows SQLite.
+- **Where the file lives:** `tasks.db`, created automatically in the project root the first time the app starts. It's listed in `.gitignore`, so every fresh clone starts with an empty file that gets seeded on first run — not shared through Git.
+- **How it's created:** on startup, `init_db()` (in `main.py`) runs `CREATE TABLE IF NOT EXISTS tasks (...)`, then checks `SELECT COUNT(*) FROM tasks` and inserts three example tasks only if the table is empty. Restarting the app never duplicates the seed data.
+- **How queries are run:** every endpoint opens a connection with `sqlite3.connect("tasks.db")` and uses **parameterized queries** (`?` placeholders, values passed separately) for every `SELECT`/`INSERT`/`UPDATE`/`DELETE` — never string-formatted SQL — so user input can't break or inject into a query.
+
+### Explored with DB Browser for SQLite
+
+Opened `tasks.db` in [DB Browser for SQLite](https://sqlitebrowser.org/) and ran queries by hand in the **Execute SQL** tab, for example:
+
+```sql
+UPDATE tasks SET done = 1 WHERE id = 1;
+```
+
+This marked "Buy milk" as done directly in the database — no code involved. Calling `GET /tasks` on the running API immediately showed `"done": true` for that task, confirming the API and DB Browser read and write the exact same file.
+
+![DB Browser — Execute SQL](db-browser-screenshot.png)
+![DB Browser — Browse Data](db-browser-browse-data.png)
 
 ## How to run
 
@@ -14,7 +34,7 @@ A small CRUD API for managing a to-do list, built with FastAPI. Data is stored i
    python3 -m venv venv
    venv\Scripts\Activate.ps1   # Windows PowerShell
 ```
-3. Install dependencies:
+3. Install dependencies (SQLite support comes from Python's built-in `sqlite3` module — nothing extra to install for the database itself):
 ```bash
    pip install fastapi uvicorn
 ```
@@ -22,6 +42,7 @@ A small CRUD API for managing a to-do list, built with FastAPI. Data is stored i
 ```bash
    uvicorn main:app --reload --port 8000
 ```
+   `tasks.db` is created automatically on first run, with the `tasks` table and three example tasks seeded.
 5. Open `http://localhost:8000` in your browser.
 
 ## Endpoints
