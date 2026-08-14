@@ -2,12 +2,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import auth
 import cache
 import db
 
 app = FastAPI()
 db.init_db()
 cache.ping_with_retry()
+auth.ping()
 
 
 class TaskCreate(BaseModel):

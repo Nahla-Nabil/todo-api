@@ -6,6 +6,8 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:dev@db:5432/tasks
       REDIS_URL: redis://redis:6379/0
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
     depends_on:
       - db
       - redis
