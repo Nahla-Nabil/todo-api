@@ -30,3 +30,11 @@ def ping() -> None:
     constructing a client — same "fail fast on startup" reasoning as
     db.init_db() and cache.ping_with_retry()."""
     get_client()
+
+
+def sign_up(email: str, password: str):
+    return get_client().auth.sign_up({"email": email, "password": password})
+
+
+def sign_in(email: str, password: str):
+    return get_client().auth.sign_in_with_password({"email": email, "password": password})

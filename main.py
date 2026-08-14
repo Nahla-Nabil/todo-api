@@ -19,6 +19,16 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     done: bool | None = None
 
+class SignupRequest(BaseModel):
+    # Optional with a None default (not a bare `str`) so a missing field is
+    # a normal 400 with a JSON body, not FastAPI's automatic 422.
+    email: str | None = None
+    password: str | None = None
+
+class LoginRequest(BaseModel):
+    email: str | None = None
+    password: str | None = None
+
 
 @app.get("/")
 def root():
@@ -89,3 +99,31 @@ def delete_task(task_id: int):
     if row is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
     db.delete_task(task_id)
+
+@app.post("/auth/signup", status_code=201)
+def signup(body: SignupRequest):
+    if not body.email or not body.password:
+        return JSONResponse(status_code=400, content={"error": "email and password are required"})
+    try:
+        result = auth.sign_up(body.email, body.password)
+    except Exception as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+    user = result.user
+    return JSONResponse(
+        status_code=201,
+        content={"id": user.id, "email": user.email, "created_at": str(user.created_at)},
+    )
+
+@app.post("/auth/login")
+def login(body: LoginRequest):
+    if not body.email or not body.password:
+        return JSONResponse(status_code=400, content={"error": "email and password are required"})
+    try:
+        result = auth.sign_in(body.email, body.password)
+    except Exception:
+        return JSONResponse(status_code=401, content={"error": "Invalid login credentials"})
+    return {
+        "access_token": result.session.access_token,
+        "refresh_token": result.session.refresh_token,
+        "token_type": "bearer",
+    }
