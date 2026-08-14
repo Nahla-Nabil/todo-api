@@ -38,3 +38,9 @@ def sign_up(email: str, password: str):
 
 def sign_in(email: str, password: str):
     return get_client().auth.sign_in_with_password({"email": email, "password": password})
+
+
+def get_user(token: str):
+    """Asks Supabase whether `token` is real — a network call, so the
+    answer is trustworthy (unlike just decoding the JWT locally)."""
+    return get_client().auth.get_user(token)

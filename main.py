@@ -134,10 +134,16 @@ def public_info():
 
 @app.get("/protected/profile")
 def profile(request: Request):
-    # Not verifying the token with Supabase yet (Stage 3) — this only
-    # confirms one was presented in the expected "Bearer <token>" shape.
     authorization = request.headers.get("Authorization")
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not token:
         return JSONResponse(status_code=401, content={"error": "Access token required"})
-    return {"todo": "Stage 3 will verify this token with Supabase"}
+
+    try:
+        user = auth.get_user(token).user
+    except Exception:
+        user = None
+    if user is None:
+        return JSONResponse(status_code=401, content={"error": "Invalid or expired token"})
+
+    return {"id": user.id, "email": user.email, "created_at": str(user.created_at)}
