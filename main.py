@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -127,3 +127,17 @@ def login(body: LoginRequest):
         "refresh_token": result.session.refresh_token,
         "token_type": "bearer",
     }
+
+@app.get("/public/info")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+@app.get("/protected/profile")
+def profile(request: Request):
+    # Not verifying the token with Supabase yet (Stage 3) — this only
+    # confirms one was presented in the expected "Bearer <token>" shape.
+    authorization = request.headers.get("Authorization")
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return JSONResponse(status_code=401, content={"error": "Access token required"})
+    return {"todo": "Stage 3 will verify this token with Supabase"}
