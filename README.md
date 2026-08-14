@@ -93,6 +93,10 @@ Interactive docs are available at `http://localhost:8000/docs`.
 
 ![Swagger UI screenshot](screenshots/swagger-screenshot.png)
 
+`/auth/logout`, `/protected/profile`, and `/protected/dashboard` show a lock icon. Click **Authorize**, paste an `access_token` from `POST /auth/login`, then **Try it out** → **Execute** on `/protected/profile` works straight from the browser — no curl needed:
+
+![Swagger UI — authorized bearer request](screenshots/swagger-auth-screenshot.png)
+
 ## Extras
 
 A few optional stretch goals from the assignment, done after the core 6 stages:

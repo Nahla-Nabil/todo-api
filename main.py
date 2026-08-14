@@ -7,7 +7,10 @@ import cache
 import db
 from auth import AuthedUser, AuthError
 
-app = FastAPI()
+app = FastAPI(
+    title="Task API",
+    description="A to-do list API with Supabase-backed authentication.",
+)
 db.init_db()
 cache.ping_with_retry()
 auth.ping()
