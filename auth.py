@@ -12,12 +12,43 @@ concurrent request.
 import os
 
 from dotenv import load_dotenv
+from fastapi import Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client, create_client
 
 load_dotenv()
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+
+# auto_error=False so a missing/malformed Authorization header lands in
+# require_user() as credentials=None instead of FastAPI's generic 403 —
+# that's what lets us return the exact 401 bodies the spec asks for. Using
+# this scheme as a dependency is also what makes the Swagger "Authorize"
+# padlock appear on protected routes for free (Stage 5).
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+class AuthError(Exception):
+    """Carries a status code and message straight through to the handler
+    registered in main.py, so every auth failure responds with
+    {"error": "..."} instead of FastAPI's default {"detail": "..."}."""
+
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        self.message = message
+
+
+class AuthedUser:
+    """What require_user() hands to a route: the verified user's safe
+    metadata plus the raw token, since /auth/logout needs the token again
+    to ask Supabase to revoke the session."""
+
+    def __init__(self, id: str, email: str | None, created_at: str | None, token: str):
+        self.id = id
+        self.email = email
+        self.created_at = created_at
+        self.token = token
 
 
 def get_client() -> Client:
@@ -44,3 +75,46 @@ def get_user(token: str):
     """Asks Supabase whether `token` is real — a network call, so the
     answer is trustworthy (unlike just decoding the JWT locally)."""
     return get_client().auth.get_user(token)
+
+
+def sign_out(token: str) -> None:
+    """Best-effort sign-out. The SDK's sign_out() reads session state off
+    the client object, which we don't have from just a bearer token — so
+    this builds a throwaway client and primes it with set_session() first.
+
+    Either way, the access token itself stays valid until it naturally
+    expires (JWTs are stateless — nothing server-side can un-sign them).
+    This only revokes the refresh token / session, which is why the route
+    calling this still returns 204 even if the Supabase call fails: the
+    token was already verified valid before we got here.
+    """
+    client = get_client()
+    client.auth.set_session(token, token)
+    client.auth.sign_out()
+
+
+def require_user(
+    credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+) -> AuthedUser:
+    """The reusable guard. Apply as Depends(require_user) to any route that
+    should only answer for a logged-in user — written once here, reused by
+    /protected/profile, /protected/dashboard, and /auth/logout.
+    """
+    if credentials is None or not credentials.credentials:
+        raise AuthError(401, "Access token required")
+
+    token = credentials.credentials
+    try:
+        user = get_user(token).user
+    except Exception:
+        user = None
+
+    if user is None:
+        raise AuthError(401, "Invalid or expired token")
+
+    return AuthedUser(
+        id=user.id,
+        email=user.email,
+        created_at=str(user.created_at) if user.created_at else None,
+        token=token,
+    )

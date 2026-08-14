@@ -1,15 +1,21 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import auth
 import cache
 import db
+from auth import AuthedUser, AuthError
 
 app = FastAPI()
 db.init_db()
 cache.ping_with_retry()
 auth.ping()
+
+
+@app.exception_handler(AuthError)
+def handle_auth_error(request: Request, exc: AuthError):
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
 
 
 class TaskCreate(BaseModel):
@@ -128,22 +134,24 @@ def login(body: LoginRequest):
         "token_type": "bearer",
     }
 
+@app.post("/auth/logout", status_code=204)
+def logout(user: AuthedUser = Depends(auth.require_user)):
+    try:
+        auth.sign_out(user.token)
+    except Exception:
+        pass  # best-effort revoke — see auth.sign_out()'s docstring
+    return Response(status_code=204)
+
 @app.get("/public/info")
 def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
 @app.get("/protected/profile")
-def profile(request: Request):
-    authorization = request.headers.get("Authorization")
-    scheme, _, token = (authorization or "").partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        return JSONResponse(status_code=401, content={"error": "Access token required"})
+def profile(user: AuthedUser = Depends(auth.require_user)):
+    return {"id": user.id, "email": user.email, "created_at": user.created_at}
 
-    try:
-        user = auth.get_user(token).user
-    except Exception:
-        user = None
-    if user is None:
-        return JSONResponse(status_code=401, content={"error": "Invalid or expired token"})
-
-    return {"id": user.id, "email": user.email, "created_at": str(user.created_at)}
+@app.get("/protected/dashboard")
+def dashboard(user: AuthedUser = Depends(auth.require_user)):
+    # A second route on the same guard, written with zero new auth code —
+    # that reuse is the whole point of Stage 4.
+    return {"message": f"Welcome back, {user.email}!"}
