@@ -4,3 +4,4 @@ tasks.db
 tasks.db-journal
 *.sqbpro
 .env
+.claude/

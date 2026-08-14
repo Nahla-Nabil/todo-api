@@ -23,6 +23,16 @@ docker exec -it <db-container-name> psql -U postgres -d tasks -c "SELECT * FROM 
 ![psql — tasks table](screenshots/postgres-tasks.png)
 <!-- TODO: replace the line above with an actual screenshot of the psql output above, saved as screenshots/postgres-tasks.png (or a GUI like pgAdmin/DBeaver/TablePlus showing the tasks table) -->
 
+## Auth
+
+- **Why Supabase Auth:** the golden rule for this stage is that this project never hashes a password or signs a token itself — that's exactly the kind of thing that ends careers when rolled by hand. Supabase is the **Identity Provider**: it stores accounts, hashes passwords, and issues signed JWTs. This app's job is only the backend-developer part — receiving a token, verifying it with Supabase, and opening (or refusing) the door.
+- **The auth module:** every call into the Supabase SDK lives in [`auth.py`](auth.py) — same shape as `db.py` and `cache.py`. It builds a **fresh Supabase client per call** instead of holding one shared global, which matters more than it looks: the Python SDK's `sign_in`/`sign_out` calls store session state *on the client object*, so a shared client would leak one user's session into another user's concurrent request.
+- **The guard:** `auth.require_user` is a single reusable FastAPI dependency — `Depends(auth.require_user)` — applied to `GET /protected/profile`, `GET /protected/dashboard`, and `POST /auth/logout`. It's built on FastAPI's `HTTPBearer` security scheme, which is also what makes the Swagger "Authorize" padlock appear on those routes automatically.
+- **Error shape:** every auth failure (missing token, malformed header, expired/tampered token, missing signup/login fields, bad credentials) responds with `{"error": "..."}` and the exact status code the assignment specifies — via a custom `AuthError` exception and an `@app.exception_handler` in `main.py`, rather than FastAPI's default `{"detail": "..."}` shape used elsewhere in this API.
+- **Logout is best-effort.** JWTs are stateless — nothing server-side can "un-sign" an access token, so it stays valid until it naturally expires (Supabase's default is one hour) no matter what `/auth/logout` does. The route revokes the refresh token/session with Supabase, but that's why it still returns `204` even if that revocation call itself fails: the token was already verified valid by the guard before the route ran.
+- **Secrets:** `SUPABASE_URL` and `SUPABASE_KEY` (the **anon key** — never the `service_role` key, which bypasses all security) are read from `.env` the same way `DATABASE_URL` and `REDIS_URL` already were.
+- **Scope, on purpose:** the existing `/tasks` routes are intentionally left untouched and unprotected this round. This assignment is scoped to exactly five new routes (`/auth/*`, `/protected/*`, `/public/info`) to practice the auth pattern on its own — wiring task ownership onto `/tasks` is explicitly next week's tenant-isolation work.
+
 ## How to run
 
 **The one-command way (recommended):**
@@ -32,7 +42,7 @@ docker exec -it <db-container-name> psql -U postgres -d tasks -c "SELECT * FROM 
    git clone https://github.com/Nahla-Nabil/todo-api.git
    cd todo-api
 ```
-2. Copy the example env file (only needed if you plan to also run the app outside of Docker — `compose.yaml` sets its own `DATABASE_URL` for the containerized run):
+2. Copy the example env file, then fill in `SUPABASE_URL` and `SUPABASE_KEY` from your own Supabase project (`Project Settings → API` — use the **anon** key, never `service_role`). `compose.yaml` sets its own `DATABASE_URL`/`REDIS_URL` for the containerized run, but Supabase is a cloud service, not a container in this stack, so those two variables always come from `.env`:
 ```bash
    cp .env.example .env
 ```
@@ -62,15 +72,23 @@ docker exec -it <db-container-name> psql -U postgres -d tasks -c "SELECT * FROM 
 
 ## Endpoints
 
-| Method | Path             | Description                  |
-|--------|------------------|-------------------------------|
-| GET    | /                | API info                     |
-| GET    | /health          | Health check                 |
-| GET    | /tasks           | List all tasks                |
-| GET    | /tasks/{id}      | Get a single task             |
-| POST   | /tasks           | Create a new task              |
-| PUT    | /tasks/{id}      | Update a task                 |
-| DELETE | /tasks/{id}      | Delete a task                 |
+| Method | Path                  | Description                              | Auth required?              |
+|--------|-----------------------|-------------------------------------------|------------------------------|
+| GET    | /                     | API info                                 | No                           |
+| GET    | /health               | Health check                             | No                           |
+| GET    | /tasks                | List all tasks                            | No                           |
+| GET    | /tasks/{id}           | Get a single task                         | No                           |
+| POST   | /tasks                | Create a new task                          | No                           |
+| PUT    | /tasks/{id}           | Update a task                             | No                           |
+| DELETE | /tasks/{id}           | Delete a task                             | No                           |
+| POST   | /auth/signup          | Create a new user account                 | No                           |
+| POST   | /auth/login           | Authenticate & return a JWT               | No                           |
+| POST   | /auth/logout          | End the user's session                    | Yes — `Authorization: Bearer <token>` |
+| GET    | /protected/profile    | Read the logged-in user's profile         | Yes — `Authorization: Bearer <token>` |
+| GET    | /protected/dashboard  | A second route on the same auth guard     | Yes — `Authorization: Bearer <token>` |
+| GET    | /public/info          | Read public, open data                    | No                           |
+
+`/tasks/*` predates this assignment and is intentionally still open — see [Auth](#auth) above for why.
 
 ## Example request
 
